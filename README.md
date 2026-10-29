@@ -1,40 +1,59 @@
-# 🤖 Integração: Google Drive + Google Gemini API
+# 🤖 Enriquecimento de Dados em Lote: Google Drive + Gemini API
 
-Solução de automação que conecta o armazenamento em nuvem do **Google Drive** diretamente aos modelos de Inteligência Artificial do **Google Gemini**. O projeto permite ler, interpretar e extrair informações estruturadas de documentos armazenados no Drive de forma automatizada.
+Pipeline automatizado em Python (desenvolvido para Google Colab) que conecta planilhas do **Google Drive** à **API do Google Gemini** para enriquecimento massivo de cadastros de peças automotivas e industriais. 
 
----
-
-## 🎯 Objetivo do Projeto
-
-Eliminar o trabalho manual de baixar arquivos, copiar textos e enviá-los individualmente para interfaces de IA. Com esta integração, o próprio script autentica na conta, localiza os documentos no Google Drive, envia o contexto para a API do Gemini e retorna a análise processada.
+O sistema lê planilhas contendo apenas **Marca** e **Código do Fabricante** e preenche automaticamente especificações logísticas de cubagem (**Peso, Altura, Largura e Comprimento**) utilizando processamento paralelo e lotes otimizados.
 
 ---
 
-## ⚙️ Arquitetura e Fluxo de Execução
+## 🎯 Problema de Negócio Resolvido
 
-1. **Autenticação no Google Drive:** Conexão segura via credenciais de API para listar e acessar arquivos de uma pasta específica na nuvem.
-2. **Extração de Conteúdo:** Leitura dos dados brutos ou documentos armazenados no Drive.
-3. **Processamento com IA (Gemini API):** Envio do conteúdo extraído junto a instruções de *prompt* estruturadas para o modelo do Gemini.
-4. **Saída / Resultado:** Retorno da análise, resumo ou extração de dados gerada pela IA diretamente para o fluxo de trabalho.
+No setor de distribuição automotiva e logística (ERP/WMS), o cadastro incompleto de peso e dimensões de embalagens impede o cálculo correto de frete e o planejamento de armazenamento. Preencher milhares de SKUs manualmente é inviável. 
 
----
-
-## 🛠️ Tecnologias e APIs Utilizadas
-
-* **Linguagem:** [Ex: Python / Java / JavaScript - Google Apps Script]
-* **Inteligência Artificial:** Google Gemini API (`google-generativeai` / Google AI Studio)
-* **Integração em Nuvem:** Google Drive API / Google Workspace
-* **Ambiente de Desenvolvimento:** VS Code / GitHub Codespaces
+Este projeto automatiza essa busca técnica em larga escala, processando centenas de itens simultaneamente com alta economia de tokens e tolerância a falhas.
 
 ---
 
-## 🔐 Configuração de Segurança e Variáveis de Ambiente
+## ⚡ Diferenciais de Engenharia do Código
 
-Por questões de segurança, as chaves de API e credenciais OAuth não estão incluídas neste repositório. Para executar o projeto localmente, configure:
+* **Processamento Paralelo (`ThreadPoolExecutor`):** Executa múltiplas requisições simultâneas (`MAX_WORKERS = 5`), processando até 500 itens paralelamente.
+* **Thread Safety (`threading.Lock`):** Controle de concorrência com *mutex lock* para garantir que múltiplas threads atualizem o DataFrame do Pandas e gravem no disco sem *race conditions* ou corrupção de dados.
+* **Sistema de Checkpoint & Retomada Automática:** Verifica a existência de arquivos parcialmente processados ao iniciar e salva o progresso periodicamente no Google Drive (`SALVAR_A_CADA_X_LOTES`). Se a conexão cair, o processamento retoma exatamente de onde parou.
+* **Otimização de Tokens (Batching & JSON Compacto):** Agrupa 100 produtos por requisição (`TAMANHO_LOTE = 100`) com serialização JSON minificada e saída estruturada (`response_mime_type="application/json"` e `temperature=0.0`).
+* **Resiliência contra Rate Limit (HTTP 429):** Estratégia de *retry* com *backoff* progressivo para contornar limites de cota da API sem interromper a execução.
+* **Segurança de Credenciais:** Integração nativa com o gerenciador de segredos do Google Colab (`google.colab.userdata`), mantendo a `API_KEY` fora do código-fonte.
 
-1. Uma chave de API gerada no [Google AI Studio](https://aistudio.google.com/).
-2. Credenciais de acesso à API do Google Drive (ou permissões do Apps Script).
-3. Um arquivo `.env` na raiz do projeto seguindo o padrão:
-   ```env
-   GEMINI_API_KEY="sua_chave_aqui"
-   DRIVE_FOLDER_ID="id_da_pasta_do_drive"
+---
+
+## 🛠️ Tecnologias Utilizadas
+
+* **Linguagem:** Python 3
+* **Manipulação de Dados:** Pandas (`read_excel`, `to_excel`)
+* **Inteligência Artificial:** SDK Oficial Google GenAI (`google-genai`)
+* **Concorrência:** `concurrent.futures` & `threading`
+* **Ambiente & Nuvem:** Google Colab & Google Drive
+
+---
+
+## ⚙️ Fluxo de Funcionamento
+
+1. **Montagem e Leitura:** O script monta o Google Drive e verifica se há um processamento em andamento (`produtos_preenchidos02.xlsx`) ou se deve iniciar a partir da base bruta (`produtos.xls.xlsx`).
+2. **Filtragem de Pendentes:** Identifica apenas as linhas onde `Peso_kg` ou `Altura_cm` estão vazios.
+3. **Empacotamento em Lotes:** Divide os itens pendentes em pacotes de 100 registros contendo `id`, `marca` e `cod_fabricante`.
+4. **Consulta Paralela ao Gemini:** Envia os lotes em paralelo exigindo retorno estrito em array JSON com `Peso_kg`, `Altura_cm`, `Largura_cm` e `Comprimento_cm`.
+5. **Persistência Incremental:** Atualiza o DataFrame de forma segura e sincroniza a planilha atualizada no Google Drive a cada 5 lotes concluídos.
+
+---
+
+## 🚀 Como Executar no Google Colab
+
+### 1. Pré-requisitos
+* Conta Google com acesso ao **Google Drive** e **Google Colab**.
+* Chave de API gerada no [Google AI Studio](https://aistudio.google.com/).
+
+### 2. Configuração
+1. No menu lateral esquerdo do Google Colab, clique no ícone de **Chave (Secrets)** e adicione um novo segredo chamado `Chave_api` contendo sua API Key do Gemini.
+2. Suba sua planilha no Google Drive contendo ao menos as colunas `Marca` e `Cod_Fabricante`.
+3. Instale o SDK atualizado do Gemini (caso necessário na célula inicial do Colab):
+   ```bash
+   !pip install google-genai pandas openpyxl
